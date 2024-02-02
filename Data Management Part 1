@@ -1,0 +1,303 @@
+/*
+Programmed by: Sneha Rani
+Programmed on: 11-20-2023
+Programmed for: ST555(001) - Final Project I
+
+Last modified on: 11-28-2023
+About the program: Data Cleaning and Management Phase I
+*/
+
+*Set filerefs and librefs;
+x "cd L:\st555\Data\WashingtonState";
+libname InputDS ".";
+filename RawData "RawData";
+libname myFormat "FormatCatalogs";
+libname lookup access 'L:\st555\Data\WashingtonState\StructuredData\LookUp.accdb';
+
+x "cd L:\st555\Results";
+libname Results ".";
+
+*Set up the working directory;
+x "cd S:\Final";
+libname Final ".";
+filename Final ".";
+
+*Close ods listing;
+ods listing close;
+
+*Set output destinations, ods statements, and options;
+ods pdf file = 'Rani Washington State Electric Vehicle.pdf' DPI = 300;
+ods pdf exclude all;
+
+*Read EV-CAFV(yes) data;
+data Final.Yes;
+  infile Rawdata("EV-CAFV(yes).txt") dsd dlm = '2C09'x firstobs = 6 truncover;
+  input VIN : $10. 
+        Zip : $5. 
+        LegDist : $2. 
+        DOLID : $9. 
+        CensusTract2020 : $11.
+        RegDate : YYMMDD10.  
+        ElecUtil : $200. 
+        Location : $31.;
+run;
+
+*Read EV-CAFV(no) data;
+data Final.No;
+  infile Rawdata("EV-CAFV(no).txt") dsd firstobs = 8 truncover;
+  input VIN $1-10 
+        Zip $11-15 
+        LegDist $16-17 
+        DOLID : $9.
+        CensusTract2020 $28-38
+        RegDate 39-44
+        /ElecUtil : $200. 
+        /Location : $31.;
+run;
+
+*Set up options for format library search;
+options fmtsearch = (MyFormat Final);
+
+*Define custom format for word-y month names;
+proc format library = Final;
+  value $newvar
+    "January" = "01"
+    "February" = "02"
+    "March" = "03"
+    "April" = "04"
+    "May" = "05"
+    "June" = "06"
+    "July" = "07"
+    "August" = "08"
+    "September" = "09"
+    "October" = "10"
+    "November" = "11"
+    "December" = "12";
+run;
+
+*Define macro variable for 250;
+%let group = 250;
+
+*Read EV-CAFV(unk) data;
+data Final.unk;
+  infile Rawdata("EV-CAFV(unk).txt") dlm = ';' dsd firstobs = 12;
+  length VIN $10 
+         ZipCode1-ZipCode&group $5 
+         LegislativeDestrict1-LegislativeDestrict&group $2 
+         DOLVehicleID1-DOLVehicleID&group $9 
+         CensusTract1-CensusTract&group $11
+         RegistrationDate1-RegistrationDate&group $18 
+         ElectricUtility1-ElectricUtility&group $59 
+         VehicleLocation1-VehicleLocation&group $31; 
+
+  input VIN $ 
+        ZipCode1-ZipCode&group $ 
+        LegislativeDestrict1-LegislativeDestrict&group $
+        DOLVehicleID1-DOLVehicleID&group $ 
+        CensusTract1-CensusTract&group $
+        RegistrationDate1-RegistrationDate&group $ 
+        ElectricUtility1-ElectricUtility&group $
+        VehicleLocation1-VehicleLocation&group $;
+
+*Reference source: Lecture 21 Slide 15;
+  array zpc[&group] $ ZipCode1-ZipCode&group;
+  array legd[&group] $ LegislativeDestrict1-LegislativeDestrict&group;
+  array ID[&group] $ DOLVehicleID1-DOLVehicleID&group;
+  array CT[&group] $ CensusTract1-CensusTract&group;
+  array RD[&group] $ RegistrationDate1-RegistrationDate&group;
+  array EU[&group] $ ElectricUtility1-ElectricUtility&group;
+  array VL[&group] $ VehicleLocation1-VehicleLocation&group;
+
+  do i = 1 to dim(zpc);
+    Zip = zpc[i];
+    LegDist = legd[i];
+    DOLID = ID[i];
+    CensusTract2020 = CT[i];
+    RegDate_or = RD[i];
+    ElecUtil = EU[i];
+    Location = VL[i];
+    
+  *Convert RegDate format to SAS date format AND Ensure records that are 
+    missing all seven of the "core" variables are not sent to the dataset;
+  if not(missing(Zip) and missing(LegDist) and missing(DOLID) and missing(CensusTract2020) 
+            and missing(RegDate_or) and missing(ElecUtil) and missing(Location)) then do;
+  
+    *Extract Month, Day and Year from RegDate;
+    MonthVal = scan(RegDate_or, 1, ' ');
+    DayVal = compress(scan(RegDate_or, 2), ',');
+    YearVal = scan(RegDate_or,3);
+
+    *Change wordy month name, day and year to numeric format;
+    MonthNum = input(put(monthval, $newvar.),2.);
+    DayNum = input(dayval, 2.);
+    YearNum = input(Yearval, 4.);
+
+    *Combine Month, Day and Year to get a SAS date format;
+    RegDate = mdy(MonthNum, DayNum, YearNum);
+    end;
+
+  *CMISS() reference: https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.5/ds2ref/p17hvh9dxpu04kn1xyjicrv2mlif.htm;
+  if cmiss(Zip, LegDist, DOLID, CensusTract2020, RegDate_or, ElecUtil, Location) ne 7 then 
+    output;
+  end;
+  drop i MonthVal DayVal YearVal MonthNum DayNum YearNum RegDate_or
+       ZipCode1-ZipCode&group LegislativeDestrict1-LegislativeDestrict&group
+       DOLVehicleID1-DOLVehicleID&group CensusTract1-CensusTract&group
+       RegistrationDate1-RegistrationDate&group ElectricUtility1-ElectricUtility&group
+       VehicleLocation1-VehicleLocation&group;
+run;
+
+*Combine three datasets: CAFV-Yes, CAFV-No, CAFV-Unknown;
+data Final.AllCAFV();
+  set Final.Yes(in=inYes)
+      Final.No(in=inNo)
+      Final.unk(in=inunk);
+  ZipN = input(Zip, comma8.);
+  if inYes eq 1 then do;
+      CAFVCode = 1;
+      CAFV = "Clean Alternative Fuel Vehicle Eligible";
+      end;
+      else if inNo eq 1 then do;
+        CAFVCode = 2;
+        CAFV = "Not eligible due to low battery range";
+        end;
+        else if inunk eq 1 then do;
+          CAFVCode = 3;
+          CAFV = "Eligibility unknown as battery range has not been researched";
+          end;     
+ run;
+
+*Sort AllCAFV file by VIN;
+proc sort data=Final.AllCaFV out=Final.AllCaFVsorted;
+    by VIN;
+run;
+
+*First merge between Demographis and AllCAFV;
+data Final.AllCAFV_Demo();
+    merge Final.AllCaFVsorted(in = inCaFV)
+          LookUp.Demographics(in = inDemo rename = (makeCat = Make modelCat = Model));
+          by VIN; 
+          if inCaFV eq 1;
+          run;
+
+*Sort the merged file(Demographics & AllCAFV) by ZipN;
+proc sort data=Final.AllCAFV_Demo out=Final.AllCaFV_DemoSorted;
+    by ZipN;
+run;
+
+*Second merge between previous file and Sashelp.zipcode;
+data Final.AllCAFV_Zip();
+    merge Final.AllCaFV_DemoSorted(in = inCaFV)
+          sashelp.zipcode(in = inZip keep = City State StateCode StateName County CountyNM Zip
+                          rename = (Zip = ZipN county=CountyFips CountyNM=CountyName State=StateFips
+                                    City = CityName));
+          by ZipN;
+          if inCaFV eq 1;
+ run;
+
+*Sort previously obtained file with zipcodes and relevant info by DOLID;
+proc sort data=Final.AllCAFV_Zip out=Final.AllCAFV_ZipSorted;
+    by DOLID;
+run;
+
+*Third merge between precious file and Non-US records with data cleaning steps;
+data Final.FinalRaniEV();
+    attrib VIN             length = $10  label = "Vehicle Identification Number" format = $10. informat = $10. 
+           MaskVin         length = $10  label = "Partially Masked VIN"
+           Zip             length = $5   label = "Vehicle Registration Zip Code" 
+           ZipN            length = 8    label = "Vehicle Registration Zip Code" format=Z5.
+           CityName        length = $35  label = "City Name"
+           StateFips       length = 8    label = "State FIPS"
+           StateCode       length = $2   label = "State Postal Code"
+           StateName       length = $25  label = "State Name"
+           CountyFips      length = 8    label = "County FIPS"
+           CountyName      length = $25  label = "County Name"
+           LegDist         length = $2   label = "Vehicle Registration Legislative District" 
+           DOLID           length = $9   label = "WA Department of Licensing ID" format=$9. informat=$9.
+           CensusTract2020 length = $11  label = "Vehicle Registration US Census Tract"
+           RegDate         length = 8    label = "Last Registration Date" format=YYMMDD10.
+           ModelYear       length = 8    label = "Vehicle Model Year"
+           EVType          length = $50  label = "EV Type(long)"     format = $50. informat = $50.
+           EVTypeShort     length = $4   label = "EV Type(Short)"
+           Erange          length = 8    label = "Electric Range"
+           BaseMSRP        length = 8    label = "Reported Base MSRP"
+           Make            length = $20  label = "Vehicle Make" 
+           Model           length = $25  label = "Vehicle Model" 
+           CAFV            length = $60  label = "Clean Alternative Fuel Vehicle Eligible Description"
+           CAFVCode        length = 8    label = "Clean Alternative Fuel Vehicle Eligible(1=Y,2=N,3=U)"
+           ElecUtil        length = $200 label = "Electric Utilities Servicing Vehicle Registration Address" 
+           PrimaryUtil     length = $200 label = "Primary Electric Utility at Vehicle Location"
+           Latitude        length = 8    label = "Vehicle Registration Latitude (decimal)"   format = 13.8
+           Longitude       length = 8    label = "Vehicle Registration Longitude (decimal)"  format = 13.8
+           Location        length = $32;
+
+    merge Final.AllCAFV_ZipSorted(in = inAll)
+          LookUp."Non-Domestic Registrations"n(in = inNonDemo rename = (ST = StateCode));
+          by DOLID;
+
+    *Extract Longtitude and Latitude values from Location variable;
+    scanner_temp = scan(scan(Location, 2, '('),1,')');
+    Longitude = scan(scanner_temp, 1, ' ');
+    Latitude = scan(scanner_temp, 2, ' ');
+    
+    *Define ElecUtil & PrimaryUtil for US records;
+    *INDEX() reference: https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.5/lefunctionsref/n0vxokxhv8lr84n10nrbnzp7gnba.htm;
+    *INDEX() help example from SAS help: https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.5/lefunctionsref/n0vxokxhv8lr84n10nrbnzp7gnba.htm#p1jfx2fkbkge9pn1w73lswgwcmhu;
+    if inNonDemo eq 0 then do;
+       if index(ElecUtil, '|') gt 0 then do;
+         PrimaryUtil = substr(ElecUtil, 1, index(ElecUtil, '|') -1);
+         end;
+         else PrimaryUtil = ElecUtil;
+         end;
+    *Define ElecUtil & PrimaryUtil & StateName for Non-US records;
+     else if inNonDemo eq 1 then do;
+             ElecUtil = "NON WASHINGTON STATE ELECTRIC UTILITY";
+             PrimaryUtil = ElecUtil;
+             if StateCode = "AP" then StateName = "Armed Forces Pacific";
+                else if StateCode = "BC" then StateName = "British Columbia";
+             end;
+    
+    *Derive EVType(Short) from EVType(Long) for US and Non-US records;
+    if not missing(EVType) then 
+       EVTypeShort = substr(EVType, index(EVType, '(')+1, index(EVType, ')') - index(EVType, '(') -1);
+       else if missing(EVType) then call missing(EVTypeShort);
+    
+    *Derive MaskVin values from VIN records; 
+    MaskVin = cats('*******', substr(VIN,8));  
+
+    *Clean BaseMSRP for proper reporting;
+    if missing(BaseMSRP) then BaseMSRP =.M;
+      else if BaseMSRP < 0 then BaseMSRP = .I;
+        else if BaseMSRP = 0 then BaseMSRP = .Z;
+
+    *Derive Make and Model formats;
+    Make = input(Make, $evmake.);
+    Model = input(Model, $evmodel.);
+        
+    drop scanner_temp Location;
+run;
+libname lookup clear;
+
+*Create first additional dataset FinalRaniUniqueVinMask;
+proc sort data = Final.FinalRaniEV out = Final.FinalRaniUniqueVinMask nodupkey;
+  by VIN;
+run;
+
+*Sort the dataset by Make Model;
+proc sort data = Final.FinalRaniEV out = Final.Sorted_final nodupkey;
+  by Make Model;
+run;
+
+*Create second additional dateset FinalRaniModels;
+proc transpose data = Final.Sorted_final out = Final.FinalRaniModels(drop=_label_ _name_) prefix = Model;
+  by Make;
+  var Make;
+  run;
+
+*Create third additional dataset FinalRaniCafvCrossEV;
+proc freq data = Final.FinalRaniEV;
+  tables CAFVCode*EVTypeShort / out=Final.FinalRaniCafvCrossEV noprint;       
+run;
+
+ods pdf close;
+quit;
