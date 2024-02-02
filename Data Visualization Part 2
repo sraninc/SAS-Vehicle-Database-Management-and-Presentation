@@ -1,0 +1,467 @@
+/*
+Programmed by: Sneha Rani
+Programmed on: 12-01-2023
+Programmed for: ST555(001) - Final Project II
+
+Last modified on: 11-28-2023
+About the program: Data Presentation - II
+*/
+
+*Set filerefs and librefs;
+x "cd L:\st555\Results\FinalProjectPhase1";
+libname InputDS ".";
+
+*Set up the working directory;
+x "cd S:\Phase2";
+libname Phase2 ".";
+
+*Close ods listing;
+ods listing close;
+
+*Set output destinations, ods statements, and options (NO OUTPUT NEEDED TO BE CREATED FOR PHASE 1);
+ods pdf file = 'Rani Washington State Electric Vehicle.pdf' DPI = 300 style = Sapphire ;
+ods listing image_dpi = 300;
+ods graphics / reset width = 6 in;
+options nodate;
+ods noproctitle;
+
+*Set up Macro variables;
+%let IDStamp = Output created by &SysUserID on &SysDate9 using &SysVLong;
+%let TitleOpts = j = center h = 14 pt bold;
+%let SubTitleOpts = j = center h = 10 pt bold;
+%let FootOpts = j = left h = 8 pt italic;
+
+options fmtsearch = (Phase2);
+*Format 1;
+proc format library = Phase2;
+  value CAFV_newcodes 
+      1 = 'CAFV Eligible'
+      2 = 'Not CAFV Eligible'
+      3 = 'CAFV Eligibility Unknown';
+
+*Output 1;
+ods pdf columns =2;  
+Title &SubTitleOpts 'Output 1';
+Title2 &TitleOpts 'Listing of BEV Cars Not Known to be CAFV*Eligible';
+Title3 &SubTitleOpts 'Partial Output -- Up to First 10 Records Shown per CAFV Status';
+Footnote &FootOpts "&IDStamp";
+Footnote2 &FootOpts '*Clean Alternative Fuel Vehicle';
+
+proc print data = InputDS.Finaldugginsev(obs = 10) label noobs;
+  where CAFVCode eq 2 and EVTypeShort = "BEV";
+  var CAFVCode Make Model ERange;
+  attrib CAFVCode label= 'CAFV Eligibility';
+  format CAFVCode CAFV_newcodes.;  
+run;
+
+proc print data = InputDS.Finaldugginsev(obs = 10) label noobs;
+  where CAFVCode eq 3 and EVTypeShort = "BEV";
+  var CAFVCode Make Model ERange;
+  attrib CAFVCode label= 'CAFV Eligibility';
+  format CAFVCode CAFV_newcodes.;  
+run;
+title;
+footnote;
+
+*Output 2;
+Title &SubTitleOpts 'Output 2';
+Title2 &TitleOpts 'Selected Summary Statistics of MSRP and Electric Range';
+Footnote &FootOpts "&IDStamp";
+proc univariate data= InputDS.Finaldugginsev;
+var BaseMSRP ERange;
+ods select Univariate.BaseMSRP.Moments
+           Univariate.BaseMSRP.BasicMeasures 
+           Univariate.BaseMSRP.MissingValues
+           Univariate.ERange.Moments
+           Univariate.ERange.BasicMeasures ;
+run;
+title;
+footnote;
+
+*Format 2;
+proc format library = Phase2;
+  value Model_Year_(fuzz=0)
+      low -< 2000 = 'Pre-2000'
+      2000 - 2004 = '2000-2004'
+      2005 - 2009 = '2005-2009'
+      2010 - 2014 = '2010-2014'
+      2015 - 2019 = '2015-2019'
+      2020 - 2024 = '2020-2024';
+run;
+
+*Output 3;
+Title &SubTitleOpts 'Output 3';
+Title2 &TitleOpts 'Quantiles and Missing Data Summary of Base MSRP';
+Title3 &SubTitleOpts 'Grouped by Model Year';
+Footnote &FootOpts "&IDStamp";
+proc univariate data= InputDS.Finaldugginsev;
+  Class ModelYear;
+  format ModelYear Model_Year_.;
+  var BaseMSRP;
+ods select MissingValues;
+ods select Quantiles; 
+run;
+title;
+footnote;
+
+ods pdf columns =1;
+
+*Output 4;
+Title &SubTitleOpts 'Output 4';
+Title2 &TitleOpts '90% Confidence Interval for Electric Range';
+Title3 &SubTitleOpts 'Grouped by CAFV* Status and EV Type';
+Footnote &FootOpts "&IDStamp";
+Footnote2 &FootOpts '*Clean Alternative Fuel Vehicle';
+proc means data= InputDS.finaldugginsuniquevinmask nonobs lclm mean uclm alpha=0.1 std n maxdec=3;
+  Class CAFVCode EVTypeShort;
+  var ERange;
+run;
+title;
+footnote;
+
+ods pdf columns = 2;
+
+*Output 5;
+/*(Order=Freq) Reference: SAS Documentation, link:
+https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.5/statug/statug_freq_syntax01.htm#statug.freq.freqorder*/ 
+Title &SubTitleOpts 'Output 5';
+Title2 &TitleOpts 'Frequency Analysis of State';
+Title3 &SubTitleOpts ' ';
+Title4 &SubTitleOpts '(Cumulative Statistics omitted)';
+Footnote &FootOpts "&IDStamp";
+proc freq data = InputDS.Finaldugginsev order = freq;
+ table StateCode / nocum missing;
+run;
+title;
+footnote;
+
+ods pdf columns =1;
+
+*Output 6;
+*nlnumw.d reference: https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.5/nlsref/p0ac33x4hswnr1n1ivc9p4rx2i9c.htm;
+Title &SubTitleOpts 'Output 6';
+Title2 &TitleOpts 'Frequency Analysis of EVType, Primary Utility*';
+Title3 &TitleOpts 'and CAFV** by EV Type';
+Title4 &SubTitleOpts '(Cumulative Statistics omitted)';
+Footnote &FootOpts "&IDStamp";
+Footnote2 &FootOpts '*Defined as first electric utility listed in the data base for the vehicle location.';
+Footnote3 &FootOpts '**Clean Alternative Fuel Vehicle';
+proc freq data = InputDS.Finaldugginsev order = freq;
+ table EVTypeShort / nocum missing;
+ table PrimaryUtil / nocum missing;
+ table CAFV*EVTypeShort / format = nlnum12.;
+run;
+title;
+footnote;
+
+*Format 3;
+proc format library = Phase2;
+  value Range_catgories(fuzz=0)
+      0 = 'Not Yet Known'
+      1 -< 200 = 'Poor'
+      200 -< 250 = 'Average'
+      250 -< 300 = 'Good'
+      300 - high = 'Great'
+      other = 'Invalid/Missing'
+  ;
+run;    
+
+*Output 7;
+Title &SubTitleOpts 'Output 7';
+Title2 &TitleOpts 'Frequency Analysis of Model Year by Electric Range';
+Title3 &SubTitleOpts 'For BEV Cars Only';
+Footnote &FootOpts "&IDStamp";
+Footnote2 &FootOpts 'Range categories: 0 = Not Yet Known; (0,200)=Poor; [200,250)=Average;[250,300)=Good;300+=Great;Other=Invalid/Missing;';
+proc freq data = InputDS.Finaldugginsev(where = (EVTypeShort = 'BEV'));
+ table ModelYear*ERange / missing format = nlnum12.;
+ format ModelYear Model_Year_. ERange Range_catgories.;
+run;
+title;
+footnote;
+
+*Output 8;
+Title &SubTitleOpts 'Output 8';
+Title2 &TitleOpts 'Frequency Analysis of Model Year by Electric Range';
+Title3 &SubTitleOpts 'Only for BEV Cars with Reported(>0) Ranges';
+Footnote &FootOpts "&IDStamp";
+Footnote2 &FootOpts 'Range categories: 0 = Not Yet Known; (0,200)=Poor; [200,250)=Average;[250,300)=Good;300+=Great;Other=Invalid/Missing;';
+proc freq data = InputDS.Finaldugginsev(where = (EVTypeShort = 'BEV' and ERange > 0));
+ table ModelYear*ERange / missing format = nlnum12.;
+ format ModelYear Model_Year_. ERange Range_catgories.;
+run;
+title;
+footnote;
+
+proc format library = phase2;
+value yes_no_unk
+    1 = 'Yes'
+    2 = 'No'
+    3 = 'Unknown';
+run;
+
+ods pdf startpage = never;
+
+*Output 9;
+Title &SubTitleOpts 'Output 9';
+Title2 &TitleOpts 'Frequency of EV Type for Each CAFV Eligility Category';
+Footnote &FootOpts "&IDStamp";
+proc sgplot data = InputDS.finaldugginscafvcrossev;
+ styleattrs datacolors = (cx3690c0 cxdf65b0);
+ vbar CAFVCode / response = rowpercent
+                 barwidth = 0.5 
+                 group = EVTypeShort 
+                 nooutline;
+ keylegend / location = Inside title = "EV Type"
+             position = TopRight opaque down = 3;
+ yaxis label = "% of CAFV Category" grid values = (0 to 100 by 10);
+ xaxis label = "CAFV Eligibility";
+ format CAFVCode yes_no_unk.;
+run;
+title;
+footnote;
+
+*Output 10;
+*Datalabel, Datalabelattrs reference: https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.5/grstatproc/n0p7vdd69sgf3wn1479qxqxuryrt.htm#p07nkocs4zcjzgn14vy8joplowbda;
+Title &SubTitleOpts 'Output 10';
+Title2 &TitleOpts 'Frequency of CAFV Eligility Category for Each EV Type';
+Footnote &FootOpts "&IDStamp";
+proc sgplot data = InputDS.finaldugginscafvcrossev;
+ styleattrs datacolors = (cxce1256 cx42b3d3 cx6a51a3);
+ hbar EVTypeShort / response = colpercent
+                 group = CAFVCode 
+                 groupdisplay = cluster nooutline 
+                 datalabel = colpercent datalabelattrs=(color = Gray size = 10);
+ keylegend / location = Inside title = "CAFV"
+             position = TopRight opaque down = 3;
+ yaxis label = "EV Type" ;
+ xaxis label = "% of EV Type" grid values = (0 to 100 by 10);
+ format CAFVCode CAFV_newcodes.;
+run;
+title;
+footnote;
+
+ods pdf startpage = now;
+
+*Output 11;
+Title &SubTitleOpts 'Output 11';
+Title2 &TitleOpts 'Comparative Boxplots for Electric Range';
+Title3 &SubTitleOpts 'Excluding Missing or Non-US State Postal Codes';
+Footnote &FootOpts "&IDStamp";
+proc sgplot data = InputDS.Finaldugginsev;
+ vbox ERange / Category = StateCode group = StateCode grouporder = ascending;
+ keylegend / title = 'State'  position = Right down = 20;
+ where not missing(StateCode) and StateCode not in ('AP','BC');
+ yaxis label = "Electric Range" ;
+ xaxis label = " " display = none offsetmin = 0.05 offsetmax = 0.05;
+run;
+title;
+footnote;
+
+ods pdf columns = 2;
+
+*Output 12;
+Title &SubTitleOpts 'Output 12';
+Title2 &TitleOpts 'Frequency of Masked VIN Under 70/30 Plan';
+Title3 &SubTitleOpts 'Showing Only: Make = JEEP';
+Footnote &FootOpts "&IDStamp";
+proc freq data = InputDS.finaldugginsuniquevinmask(where = (Make = 'JEEP')) order = freq;
+ table MaskVIN / missing nocum;
+run;
+title;
+footnote;
+
+ods pdf columns =1;
+
+*Output 13;
+Title &SubTitleOpts 'Output 13';
+Title2 &TitleOpts 'Listing of EV Makes and Models';
+Footnote &FootOpts "&IDStamp";
+Footnote2 &FootOpts "Wow. This is just an awful table. Please don't ever make something like this ever again. Seriously. This is bad.";
+proc report data = InputDS.finaldugginsmodels;
+  columns ('Vehicle Make' Make)('Models in Database' (Model1 -- Model12));
+  define Make / display ID ' ';
+  define Model1 -- Model12 / ' ';
+run;
+title;
+footnote;
+
+ods pdf columns = 1;
+
+*Output 14;
+Title &SubTitleOpts "Output 14";
+Title2 &TitleOpts "Analysis of Electric Range and Base MSRP";
+Title3 &SubTitleOpts "Grouped by Model Year, EV Type*, and CAFV Eligibility";
+Footnote &FootOpts "&IDStamp";
+Footnote2 &FootOpts "*Due to substantial differences between range for PHEV and BEV, pooled statistics should not be used for inferences";
+proc report data = InputDS.Finaldugginsev;
+  format ModelYear Model_Year_. CAFVCode CAFV_newcodes.;
+  columns ModelYear EVTypeShort CAFVCode ('Electric Range' (ERange=EMEAN ERange=ESD ERange=ECOUNT)) 
+          ('BaseMSRP' (BaseMSRP = BMEAN BaseMSRP=BSD BaseMSRP=BCOUNT));
+  define ModelYear / group order = internal;
+  define EVTypeShort / group 'EV Type';
+  define CAFVCode / group;
+  define EMEAN / analysis mean 'Mean' format = comma8.1 ;
+  define ESD / analysis std 'Std. Dev.' format = comma8.2;
+  define ECOUNT / analysis n 'Count' format = nlnum12.;
+  define BMEAN / analysis mean 'Mean' format = dollar8.;
+  define BSD / analysis std 'Std. Dev.' format = dollar8.;
+  define BCOUNT / analysis n 'Count' format = dollar8.;
+  break after ModelYear / summarize;
+run;
+title;
+footnote;
+
+ods pdf columns = 1;
+
+*Output 15;
+Title &SubTitleOpts "Output 15";
+Title2 &TitleOpts "Analysis of Electric Range and Base MSRP";
+Title3 &SubTitleOpts "Grouped by Model Year, EV Type*, and CAFV Eligibility";
+Footnote &FootOpts "&IDStamp";
+Footnote2 &FootOpts "*Due to substantial differences between range for PHEV and BEV, pooled statistics should not be used for inferences";
+Footnote3 &FootOpts "Alternative Display: EV Type displays on all non-summary rows";
+
+proc report data = InputDS.Finaldugginsev;
+  format ModelYear Model_Year_. CAFVCode CAFV_newcodes.;
+  columns ModelYear EVTypeShort EVTypeShort_new CAFVCode  ('Electric Range' (ERange=EMEAN ERange=ESD ERange=ECOUNT)) 
+          ('BaseMSRP' (BaseMSRP = BMEAN BaseMSRP=BSD BaseMSRP=BCOUNT));
+  define ModelYear / group order = internal;
+  define EVTypeShort / group noprint;
+  define EVTypeShort_new / computed 'EV Type';
+  define CAFVCode / group;
+  define EMEAN / analysis mean 'Mean' format = comma8.1 ;
+  define ESD / analysis std 'Std. Dev.' format = comma8.2;
+  define ECOUNT / analysis n 'Count' format = nlnum12.;
+  define BMEAN / analysis mean 'Mean' format = dollar8.;
+  define BSD / analysis std 'Std. Dev.' format = dollar8.;
+  define BCOUNT / analysis n 'Count' format = dollar8.;
+  break after ModelYear / summarize;
+  Compute before EVTypeShort;
+      EV_temp = EVTypeShort;
+      EndComp;
+  Compute EVTypeShort_new / character length = 4;
+      if missing (_BREAK_) then EVTypeShort_new = EV_temp;
+        else if not missing(_BREAK_) then EVTypeShort_new = ' ';
+        EndComp;  
+run;
+title;
+footnote;
+
+proc format library = Phase2;
+  value BEV_color(fuzz=0)
+    0.0 = 'cxdf65b0' 
+    0.1 <- 200.0 = 'cxedf8fb'
+    200.0 <- 250.0 = 'cx99d8c9'
+    250.0 <- 300.0 = 'cx66c2a4'
+    300.0 <- High  = 'cx41ae76' ;
+run;
+
+proc format library = Phase2;
+  value PHEV_color(fuzz=0)
+    0.0 = 'cxdf65b0' 
+    0.1 <- 25.0 = 'cxedf8fb'
+    25.0 <- 50.0 = 'cx99d8c9'
+    50.0 <- 75.0 = 'cx66c2a4'
+    75.0 <- High  = 'cx41ae76' ;
+run;
+
+*Output 16;
+Title &SubTitleOpts "Output 16";
+Title2 &TitleOpts "Color-Coded Analysis of Electric Range and Base MSRP";
+Title3 &SubTitleOpts "Grouped by Model Year, EV Type*, and CAFV Eligibility";
+Footnote &FootOpts "&IDStamp";
+Footnote2 &FootOpts "*Due to substantial differences between range for PHEV and BEV, pooled statistics should not be used for inferences";
+Footnote3 &FootOpts "Despite PHEV and BEV range differences, all color-coding uses BEV cutoffs";
+Footnote4 &FootOpts "Alternative Display: EV Type displays on all non-summary rows";
+
+proc report data = InputDS.Finaldugginsev
+  style(summary) = [backgroundcolor = cxd9d9d9];
+  format ModelYear Model_Year_. CAFVCode CAFV_newcodes.;
+  columns ModelYear EVTypeShort EVTypeShort_new CAFVCode  ('Electric Range' (ERange=EMEAN ERange=ESD ERange=ECOUNT)) 
+          ('BaseMSRP' (BaseMSRP = BMEAN BaseMSRP=BSD BaseMSRP=BCOUNT));
+  define ModelYear / group order = internal;
+  define EVTypeShort / group noprint;
+  define EVTypeShort_new / computed 'EV Type';
+  define CAFVCode / group;
+  define EMEAN / analysis mean 'Mean' format = comma8.1 
+                 style(column) = [background = BEV_color.];
+  define ESD / analysis std 'Std. Dev.' format = comma8.2;
+  define ECOUNT / analysis n 'Count' format = nlnum12.;
+  define BMEAN / analysis mean 'Mean' format = dollar8.;
+  define BSD / analysis std 'Std. Dev.' format = dollar8.;
+  define BCOUNT / analysis n 'Count' format = dollar8.;
+  break after ModelYear / summarize;
+  Compute before EVTypeShort;
+      EV_temp = EVTypeShort;
+      EndComp;
+  Compute EVTypeShort_new / character length = 4;
+      if missing (_BREAK_) then EVTypeShort_new = EV_temp;
+        else if not missing(_BREAK_) then EVTypeShort_new = ' ';
+        EndComp;
+  Compute after _page_ / style = [backgroundcolor = black color = white just = right];
+      line "Electric range-based coloring:<200, 200-250, 250-300, >300";
+      EndComp; 
+run;
+title;
+footnote;
+
+*Output 17;
+Title &SubTitleOpts "Output 17";
+Title2 &TitleOpts "Color-Coded Analysis of Electric Range and Base MSRP";
+Title3 &SubTitleOpts "Grouped by Model Year, EV Type*, and CAFV Eligibility";
+Footnote &FootOpts "&IDStamp";
+Footnote2 &FootOpts "*Due to substantial differences between range for PHEV and BEV, pooled statistics should not be used for inferences";
+Footnote3 &FootOpts "BEV and PHEV rows use their respective cutoffs. Summary rows use BEV cutoffs.";
+Footnote4 &FootOpts "Alternative Display: EV Type displays on all non-summary rows";
+
+proc report data = InputDS.Finaldugginsev
+  style(summary) = [backgroundcolor = BEV_color.];
+  format ModelYear Model_Year_. CAFVCode CAFV_newcodes.;
+  columns ModelYear EVTypeShort EVTypeShort_new CAFVCode  
+          ('Electric Range' (ERange=EMEAN ERange=ESD ERange=ECOUNT)) 
+          ('BaseMSRP' (BaseMSRP = BMEAN BaseMSRP=BSD BaseMSRP=BCOUNT));
+  define ModelYear / group order = internal;
+  define EVTypeShort / group noprint;
+  define EVTypeShort_new / computed 'EV Type';
+  define CAFVCode / group;
+  define EMEAN / analysis mean 'Mean' format = comma8.1;
+  /*define EMEAN_new / computed 'Mean' format = comma8.1;*/
+  define ESD / analysis std 'Std. Dev.' format = comma8.2;
+  define ECOUNT / analysis n 'Count' format = nlnum12.;
+  define BMEAN / analysis mean 'Mean' format = dollar8.;
+  define BSD / analysis std 'Std. Dev.' format = dollar8.;
+  define BCOUNT / analysis n 'Count' format = dollar8.;
+  break after ModelYear / summarize;
+  Compute before EVTypeShort;
+      EV_temp = EVTypeShort;
+      EndComp;
+  Compute EVTypeShort_new / character length = 4;
+      if missing (_BREAK_) then EVTypeShort_new = EV_temp;
+        else if not missing(_BREAK_) then EVTypeShort_new = ' ';
+        EndComp;
+  Compute after _page_ / style = [backgroundcolor = black color = white just = right];
+      line "BEV range-based coloring:<200, 200-250, 250-300, >300";
+      line "PEV range-based coloring:<25, 25-50, 50-75, >75";
+      EndComp;
+  /*Compute before EMEAN;
+      E_Temp = EMEAN;
+      EndComp;
+  Compute EMEAN_new;
+    if missing(_BREAK_) then do;
+      EMEAN_new = E_Temp;
+      if EVTypeShort_new = 'BEV' and EMEAN_new ne ' '
+              then call define(_COL_, 'style', 'style=[background=BEV_color.]');
+      else if EVTypeShort_new = 'PHEV' then call define(_COL_, 'style', 'style=[background=PHEV_color.]');
+      end;
+      else if not missing(_BREAK_) then do;
+          EMEAN_new = E_Temp;
+          call define(_COL_, 'style', 'style=[background=BEV_color.]');
+      end;               
+      EndComp;*/
+  
+run;
+title;
+footnote;
+
+ods pdf close;
+quit;
